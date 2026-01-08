@@ -13,24 +13,39 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'keyword is required' });
   }
 
-  // ✅ 올바른 환경변수 이름 사용
-  let CLIENT_IDS = [];
-  let CLIENT_SECRETS = [];
+  // ✅ 안전한 환경변수 파싱
+  let CLIENT_ID, CLIENT_SECRET;
 
   try {
-    CLIENT_IDS = JSON.parse(process.env.DATALAB_CLIENT_IDS || '[]');
-    CLIENT_SECRETS = JSON.parse(process.env.DATALAB_CLIENT_SECRETS || '[]');
+    // 배열 형태로 저장된 경우
+    const ids = JSON.parse(process.env.DATALAB_CLIENT_IDS || '[]');
+    const secrets = JSON.parse(process.env.DATALAB_CLIENT_SECRETS || '[]');
+    
+    if (ids.length > 0 && secrets.length > 0) {
+      CLIENT_ID = ids[0];
+      CLIENT_SECRET = secrets[0];
+    }
   } catch (e) {
-    console.error('Failed to parse client IDs/secrets:', e);
+    // JSON 파싱 실패시 단순 문자열로 시도
+    CLIENT_ID = process.env.DATALAB_CLIENT_IDS;
+    CLIENT_SECRET = process.env.DATALAB_CLIENT_SECRETS;
   }
 
-  if (CLIENT_IDS.length === 0 || CLIENT_SECRETS.length === 0) {
-    return res.status(500).json({ error: 'No Datalab API credentials configured' });
+  // 대체 환경변수도 확인
+  if (!CLIENT_ID || !CLIENT_SECRET) {
+    CLIENT_ID = process.env.NAVER_CLIENT_ID;
+    CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
   }
 
-  // 첫 번째 키 사용 (나중에 로테이션 추가 가능)
-  const CLIENT_ID = CLIENT_IDS[0];
-  const CLIENT_SECRET = CLIENT_SECRETS[0];
+  if (!CLIENT_ID || !CLIENT_SECRET) {
+    return res.status(500).json({ 
+      error: 'No Datalab API credentials configured',
+      debug: {
+        hasDatalab: !!process.env.DATALAB_CLIENT_IDS,
+        hasNaver: !!process.env.NAVER_CLIENT_ID
+      }
+    });
+  }
 
   // 최근 1년 기간 설정
   const endDate = new Date();
@@ -69,6 +84,7 @@ export default async function handler(req, res) {
       
       if (!res.ok) {
         const errorData = await res.json();
+        console.error('Gender API error:', errorData);
         throw new Error(`Datalab API error: ${JSON.stringify(errorData)}`);
       }
       
@@ -77,7 +93,7 @@ export default async function handler(req, res) {
 
     const [femaleData, maleData] = await Promise.all(genderRequests);
 
-    // 연령별 데이터 수집 (올바른 코드 사용)
+    // 연령별 데이터 수집
     const ageGroups = [
       { label: '10대', codes: ['1','2'] },
       { label: '20대', codes: ['3','4'] },
@@ -101,6 +117,7 @@ export default async function handler(req, res) {
       
       if (!res.ok) {
         const errorData = await res.json();
+        console.error('Age API error:', errorData);
         throw new Error(`Datalab API error: ${JSON.stringify(errorData)}`);
       }
       
@@ -110,7 +127,7 @@ export default async function handler(req, res) {
 
     const ageResults = await Promise.all(ageRequests);
 
-    // 최근 30개 데이터 포인트 합산 함수
+    // 최근 30개 데이터 포인트 합산
     const sumLast30 = (apiResponse) => {
       const arr = apiResponse?.results?.[0]?.data || [];
       const last30 = arr.slice(-30);
@@ -145,7 +162,8 @@ export default async function handler(req, res) {
     console.error('Naver Datalab API Error:', error);
     return res.status(500).json({ 
       error: 'Failed to fetch demographics', 
-      message: error.message 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
