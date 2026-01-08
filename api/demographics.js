@@ -13,37 +13,16 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'keyword is required' });
   }
 
-  // ✅ 안전한 환경변수 파싱
-  let CLIENT_ID, CLIENT_SECRET;
+  // ✅ 쉼표로 구분된 값 파싱
+  const CLIENT_IDS = (process.env.DATALAB_CLIENT_IDS || '').split(',');
+  const CLIENT_SECRETS = (process.env.DATALAB_CLIENT_SECRETS || '').split(',');
 
-  try {
-    // 배열 형태로 저장된 경우
-    const ids = JSON.parse(process.env.DATALAB_CLIENT_IDS || '[]');
-    const secrets = JSON.parse(process.env.DATALAB_CLIENT_SECRETS || '[]');
-    
-    if (ids.length > 0 && secrets.length > 0) {
-      CLIENT_ID = ids[0];
-      CLIENT_SECRET = secrets[0];
-    }
-  } catch (e) {
-    // JSON 파싱 실패시 단순 문자열로 시도
-    CLIENT_ID = process.env.DATALAB_CLIENT_IDS;
-    CLIENT_SECRET = process.env.DATALAB_CLIENT_SECRETS;
-  }
-
-  // 대체 환경변수도 확인
-  if (!CLIENT_ID || !CLIENT_SECRET) {
-    CLIENT_ID = process.env.NAVER_CLIENT_ID;
-    CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
-  }
+  const CLIENT_ID = CLIENT_IDS[0]?.trim();
+  const CLIENT_SECRET = CLIENT_SECRETS[0]?.trim();
 
   if (!CLIENT_ID || !CLIENT_SECRET) {
     return res.status(500).json({ 
-      error: 'No Datalab API credentials configured',
-      debug: {
-        hasDatalab: !!process.env.DATALAB_CLIENT_IDS,
-        hasNaver: !!process.env.NAVER_CLIENT_ID
-      }
+      error: 'No Datalab API credentials configured'
     });
   }
 
@@ -162,8 +141,7 @@ export default async function handler(req, res) {
     console.error('Naver Datalab API Error:', error);
     return res.status(500).json({ 
       error: 'Failed to fetch demographics', 
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: error.message
     });
   }
 }
