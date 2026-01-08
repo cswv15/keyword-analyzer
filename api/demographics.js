@@ -13,17 +13,16 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'keyword is required' });
   }
 
-  // ✅ 쉼표로 구분된 값 파싱
-  const CLIENT_IDS = (process.env.DATALAB_CLIENT_IDS || '').split(',');
-  const CLIENT_SECRETS = (process.env.DATALAB_CLIENT_SECRETS || '').split(',');
-
-  const CLIENT_ID = CLIENT_IDS[0]?.trim();
-  const CLIENT_SECRET = CLIENT_SECRETS[0]?.trim();
+  // ✅ datalab.js와 동일한 방식
+  const clientIds = (process.env.DATALAB_CLIENT_IDS || '').split(',');
+  const clientSecrets = (process.env.DATALAB_CLIENT_SECRETS || '').split(',');
+  
+  const currentIndex = Math.floor(Date.now() / 60000) % clientIds.length;
+  const CLIENT_ID = clientIds[currentIndex].trim();
+  const CLIENT_SECRET = clientSecrets[currentIndex].trim();
 
   if (!CLIENT_ID || !CLIENT_SECRET) {
-    return res.status(500).json({ 
-      error: 'No Datalab API credentials configured'
-    });
+    return res.status(500).json({ error: 'No Datalab API credentials configured' });
   }
 
   // 최근 1년 기간 설정
