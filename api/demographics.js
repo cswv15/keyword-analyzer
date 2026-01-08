@@ -16,34 +16,31 @@ export default async function handler(req, res) {
   const CLIENT_ID = process.env.NAVER_DATALAB_CLIENT_ID;
   const CLIENT_SECRET = process.env.NAVER_DATALAB_CLIENT_SECRET;
 
-  // 최근 1개월 기간 설정
+  // 최근 1년 기간 설정
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setMonth(startDate.getMonth() - 1);
+  startDate.setFullYear(startDate.getFullYear() - 1);
 
   const formatDate = (date) => {
     return date.toISOString().split('T')[0];
   };
 
-  const requestBody = {
+  const baseBody = {
     startDate: formatDate(startDate),
     endDate: formatDate(endDate),
-    timeUnit: 'date',
+    timeUnit: 'month',
     keywordGroups: [
       {
         groupName: keyword,
         keywords: [keyword]
       }
-    ],
-    device: '',
-    ages: [],
-    gender: ''
+    ]
   };
 
   try {
     // 성별 데이터 수집
-    const genderRequests = ['m', 'f'].map(async (gender) => {
-      const genderBody = { ...requestBody, gender };
+    const genderRequests = ['f', 'm'].map(async (gender) => {
+      const genderBody = { ...baseBody, gender };
       const res = await fetch('https://openapi.naver.com/v1/datalab/search', {
         method: 'POST',
         headers: {
@@ -56,12 +53,20 @@ export default async function handler(req, res) {
       return res.json();
     });
 
-    const [maleData, femaleData] = await Promise.all(genderRequests);
+    const [femaleData, maleData] = await Promise.all(genderRequests);
 
-    // 연령별 데이터 수집
-    const ageGroups = ['1', '2', '3', '4', '5', '6'];
-    const ageRequests = ageGroups.map(async (age) => {
-      const ageBody = { ...requestBody, ages: [age] };
+    // 연령별 데이터 수집 (올바른 코드 사용)
+    const ageGroups = [
+      { label: '10대', codes: ['1','2'] },
+      { label: '20대', codes: ['3','4'] },
+      { label: '30대', codes: ['5','6'] },
+      { label: '40대', codes: ['7','8'] },
+      { label: '50대', codes: ['9','10'] },
+      { label: '60대 이상', codes: ['11'] }
+    ];
+
+    const ageRequests = ageGroups.map(async (group) => {
+      const ageBody = { ...baseBody, ages: group.codes };
       const res = await fetch('https://openapi.naver.com/v1/datalab/search', {
         method: 'POST',
         headers: {
@@ -71,33 +76,39 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify(ageBody)
       });
-      return res.json();
+      const data = await res.json();
+      return { label: group.label, data };
     });
 
-    const ageData = await Promise.all(ageRequests);
+    const ageResults = await Promise.all(ageRequests);
 
-    // 데이터 집계
-    const getMeanRatio = (data) => {
-      if (!data.results || !data.results[0] || !data.results[0].data) return 0;
-      const values = data.results[0].data.map(d => d.ratio);
-      return values.reduce((a, b) => a + b, 0) / values.length;
+    // 최근 30개 데이터 포인트 합산 함수
+    const sumLast30 = (apiResponse) => {
+      const arr = apiResponse?.results?.[0]?.data || [];
+      const last30 = arr.slice(-30);
+      return last30.reduce((sum, item) => sum + (item.ratio || 0), 0);
     };
 
-    const maleRatio = getMeanRatio(maleData);
-    const femaleRatio = getMeanRatio(femaleData);
-    const total = maleRatio + femaleRatio;
+    // 성별 비율 계산
+    const femaleSum = sumLast30(femaleData);
+    const maleSum = sumLast30(maleData);
+    const genderTotal = femaleSum + maleSum || 1;
 
-    const ageRatios = ageGroups.map((age, index) => getMeanRatio(ageData[index]));
-    const ageTotal = ageRatios.reduce((a, b) => a + b, 0);
+    // 연령별 비율 계산
+    const ageSums = ageResults.map(group => ({
+      label: group.label,
+      sum: sumLast30(group.data)
+    }));
+    const ageTotal = ageSums.reduce((sum, item) => sum + item.sum, 0) || 1;
 
     const result = {
       gender: {
-        male: total > 0 ? Math.round((maleRatio / total) * 100) : 50,
-        female: total > 0 ? Math.round((femaleRatio / total) * 100) : 50
+        female: Math.round((femaleSum / genderTotal) * 100),
+        male: Math.round((maleSum / genderTotal) * 100)
       },
-      age: ageGroups.map((age, index) => ({
-        age: ['10대', '20대', '30대', '40대', '50대', '60대 이상'][index],
-        ratio: ageTotal > 0 ? Math.round((ageRatios[index] / ageTotal) * 100) : 0
+      age: ageSums.map(item => ({
+        age: item.label,
+        ratio: Math.round((item.sum / ageTotal) * 100)
       }))
     };
 
