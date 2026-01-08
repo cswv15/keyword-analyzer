@@ -31,7 +31,7 @@ export default async function handler(req, res) {
   const requestBody = {
     startDate: formatDate(startDate),
     endDate: formatDate(endDate),
-    timeUnit: 'month',
+    timeUnit: 'date',  // ✅ 월별 → 일별로 변경
     keywordGroups: [
       {
         groupName: keyword,
